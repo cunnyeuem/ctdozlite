@@ -2,43 +2,35 @@
 # Chạy: tab Actions -> "Build iOS IPA" -> Run workflow
 # Kết quả: artifact "ctdozlite-unsigned-ipa" (IPA chưa ký -> ký bằng Sideloadly/AltStore)
 name: Build iOS IPA
-
 on:
   workflow_dispatch:
     inputs:
       cargo_features:
-        description: "Cargo features (để trống = mặc định). Vd: --no-default-features"
+        description: "Cargo features (để trống = mặc định)"
         required: false
         default: ""
-
 env:
-  BIN_NAME: zalo-rust            # tên binary theo README
+  BIN_NAME: ctdozlite
   APP_NAME: ctdozlite
-  BUNDLE_ID: net.ctdo.ctdozlite  # đổi nếu cần
+  BUNDLE_ID: net.ctdo.ctdozlite
   VERSION: "0.0.1"
   IPHONEOS_DEPLOYMENT_TARGET: "14.0"
   CMAKE_POLICY_VERSION_MINIMUM: "3.5"
-
 jobs:
   build:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-
       - name: Cài Rust + target iOS
         run: |
           rustup toolchain install stable --profile minimal
           rustup target add aarch64-apple-ios
-
       - name: Cài công cụ build
         run: brew install cmake pkg-config
-
-      - name: Kiểm tra biên dịch (hiện lỗi sớm)
+      - name: Kiểm tra biên dịch
         run: cargo check --release --target aarch64-apple-ios --bin ${{ env.BIN_NAME }} ${{ github.event.inputs.cargo_features }}
-
       - name: Build release
         run: cargo build --release --target aarch64-apple-ios --bin ${{ env.BIN_NAME }} ${{ github.event.inputs.cargo_features }}
-
       - name: Đóng gói .app
         run: |
           set -e
@@ -76,15 +68,12 @@ jobs:
           </dict>
           </plist>
           EOF
-          # bỏ thụt đầu dòng do heredoc trong YAML
           sed -i '' 's/^          //' "$APP/Info.plist"
           plutil -lint "$APP/Info.plist"
-
       - name: Tạo IPA
         run: |
           zip -qry "${APP_NAME}-${VERSION}-unsigned.ipa" Payload
           ls -lh *.ipa
-
       - uses: actions/upload-artifact@v4
         with:
           name: ctdozlite-unsigned-ipa
