@@ -1,0 +1,91 @@
+# Đặt file này vào: .github/workflows/ios-ipa.yml (trong repo FORK của mày)
+# Chạy: tab Actions -> "Build iOS IPA" -> Run workflow
+# Kết quả: artifact "ctdozlite-unsigned-ipa" (IPA chưa ký -> ký bằng Sideloadly/AltStore)
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      cargo_features:
+        description: "Cargo features (để trống = mặc định). Vd: --no-default-features"
+        required: false
+        default: ""
+
+env:
+  BIN_NAME: zalo-rust            # tên binary theo README
+  APP_NAME: ctdozlite
+  BUNDLE_ID: net.ctdo.ctdozlite  # đổi nếu cần
+  VERSION: "0.0.1"
+  IPHONEOS_DEPLOYMENT_TARGET: "14.0"
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cài Rust + target iOS
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-apple-ios
+
+      - name: Cài công cụ build
+        run: brew install cmake pkg-config
+
+      - name: Kiểm tra biên dịch (hiện lỗi sớm)
+        run: cargo check --release --target aarch64-apple-ios --bin ${{ env.BIN_NAME }} ${{ github.event.inputs.cargo_features }}
+
+      - name: Build release
+        run: cargo build --release --target aarch64-apple-ios --bin ${{ env.BIN_NAME }} ${{ github.event.inputs.cargo_features }}
+
+      - name: Đóng gói .app
+        run: |
+          set -e
+          APP="Payload/${APP_NAME}.app"
+          mkdir -p "$APP"
+          cp "target/aarch64-apple-ios/release/${BIN_NAME}" "$APP/${BIN_NAME}"
+          chmod +x "$APP/${BIN_NAME}"
+          cat > "$APP/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>${BIN_NAME}</string>
+            <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
+            <key>CFBundleName</key><string>${APP_NAME}</string>
+            <key>CFBundleDisplayName</key><string>${APP_NAME}</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+            <key>CFBundleVersion</key><string>${VERSION}</string>
+            <key>MinimumOSVersion</key><string>${IPHONEOS_DEPLOYMENT_TARGET}</string>
+            <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+            <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
+            <key>UILaunchScreen</key><dict/>
+            <key>UIStatusBarStyle</key><string>UIStatusBarStyleDefault</string>
+            <key>UISupportedInterfaceOrientations</key>
+            <array>
+              <string>UIInterfaceOrientationPortrait</string>
+              <string>UIInterfaceOrientationLandscapeLeft</string>
+              <string>UIInterfaceOrientationLandscapeRight</string>
+            </array>
+            <key>NSMicrophoneUsageDescription</key><string>Dùng cho gọi thoại</string>
+            <key>NSCameraUsageDescription</key><string>Dùng cho gọi video</string>
+            <key>NSPhotoLibraryUsageDescription</key><string>Chọn ảnh để gửi</string>
+            <key>NSLocalNetworkUsageDescription</key><string>Kết nối cuộc gọi</string>
+          </dict>
+          </plist>
+          EOF
+          # bỏ thụt đầu dòng do heredoc trong YAML
+          sed -i '' 's/^          //' "$APP/Info.plist"
+          plutil -lint "$APP/Info.plist"
+
+      - name: Tạo IPA
+        run: |
+          zip -qry "${APP_NAME}-${VERSION}-unsigned.ipa" Payload
+          ls -lh *.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ctdozlite-unsigned-ipa
+          path: "*.ipa"
